@@ -7,6 +7,7 @@
 //
 
 import UIKit
+import SystemConfiguration
 
 class ViewController: UIViewController {
     
@@ -14,6 +15,8 @@ class ViewController: UIViewController {
     
     var  downloadSession: URLSession?
     var downlaodTask: URLSessionDownloadTask?
+    
+    let reachability = SCNetworkReachabilityCreateWithName(nil, "www.baidu.com")
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -27,11 +30,15 @@ class ViewController: UIViewController {
 //        
 //        let testSession = URLSession(configuration: defaultSessionConfiguration, delegate: delegate, delegateQueue: OperationQueue.current)
 //        
+//        dataCacheUseRequest()
+//        dataCacheUseConfiguration()
       
         
         let config = URLSessionConfiguration.background(withIdentifier: "mydownlaod")
         self.downloadSession = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-    }
+       
+        
+        }
 
     override func didReceiveMemoryWarning() {
         super.didReceiveMemoryWarning()
@@ -70,7 +77,7 @@ extension ViewController {
     func sessionDataTaskRequest(method: String, paramenters: [String: AnyObject]) {
         
         // 1. 创建 url
-        var hostString = "https://httpbin.org/ip"
+        let hostString = "https://httpbin.org/ip"
         var request = URLRequest(url: URL(string: hostString)!)
         request.httpMethod = "GET"
         // request.httpBody
@@ -110,6 +117,8 @@ extension ViewController {
         
         var request = URLRequest.init(url: url)
         request.httpMethod = "POST"
+        
+       
         
         let session = URLSession(configuration: URLSessionConfiguration.default, delegate: self, delegateQueue: nil)
         
@@ -178,6 +187,8 @@ extension ViewController {
    
 }
 
+// URLSessionDownloadDelegate
+
 extension ViewController: URLSessionDownloadDelegate {
     
     // 下载完成
@@ -226,3 +237,279 @@ extension ViewController: URLSessionDownloadDelegate {
         // 更新进度条或者其他操作
     }
 }
+
+
+/**
+ * ## 网络缓存 --- 利用 URLSession 相关内容进行缓存
+ * #### 缓存策略
+ * 1. URLRequest.CachePolicy.useProtocolCachePolicy // 缓存存在就读缓存,若不存在就请求服务器
+ * 2. URLRequest.CachePolicy.reloadIgnoringLocalCacheData // 忽略本地缓存,直接请求服务器数据
+ * 3. URLRequest.CachePolicy.returnCacheDataElseLoad // 本地有缓存,忽略其有效性,无则请求服务器
+ * 4. URLRequest.CachePolicy.returnCacheDataDontLoad // 直接加载本地缓存, 没有也不请求网络
+ * 5. URLRequest.CachePolicy.reloadIgnoringLocalAndRemoteCacheData // 未实现
+ * 6. URLRequest.CachePolicy.reloadRevalidatingCacheData // 未实现
+ 
+ * #### 使用方法
+ * 1. request.cachePolicy = .useProtocolCachePolicy => URLRequest
+ * 2. config.requestCachePolicy = .useProtocolCachePolicy => URLSessionConfiguration
+ 
+ * #### 使用 URLCache + reqeust 进行缓存
+ * #### 使用 URLCache + URLSessionConfiguration 进行缓存
+ 
+ */
+
+// 使用 URLCache + reqeust 进行缓存
+
+extension ViewController {
+    
+    func dataCacheUseRequest() {
+        
+        let fileURL = URL(string: "https://httpbin.org/ip")
+        var request = URLRequest(url: fileURL!)
+        
+        let memoryCapacity = 4 * 1024 * 1024 // 内存容量 4g
+        let diskCapaciry = 10 * 1024 * 1024 // 磁盘容量 10g
+        let cacheFilePath = "RoniCache" // 缓存路径
+        
+        let urlCache = URLCache.shared
+        urlCache.memoryCapacity = memoryCapacity
+        urlCache.diskCapacity = diskCapaciry
+        
+        print("URLCache's disk capacity is \(URLCache.shared.diskCapacity) bytes")
+        print("URLCache's disk usage capacity is \(URLCache.shared.currentDiskUsage) bytes")
+        print("URLCache's memory capacity is \(URLCache.shared.memoryCapacity) bytes")
+        print("URLCache's memory usage capacity is \(URLCache.shared.currentMemoryUsage) bytes")
+        print("\(URLCache.shared)")
+        
+        request.cachePolicy = .returnCacheDataElseLoad
+        
+        let session = URLSession.shared
+        let dataTask = session.dataTask(with: request) { (data, response, error) in
+            guard let data =  data else{
+                return
+            }
+            
+            print("缓存数据长度: \(data.count)")
+        }
+        
+        dataTask.resume()
+    }
+
+}
+
+
+// 使用 URLCache + URLSessionConfiguration 进行缓存
+
+extension ViewController {
+
+    func dataCacheUseConfiguration() {
+        
+        let fileURL = URL(string: "https://httpbin.org/ip")
+        var request = URLRequest(url: fileURL!)
+        
+        let memoryCapacity = 3 * 1024 * 1024 // 内存容量 4g
+        let diskCapaciry = 20 * 1024 * 1024 // 磁盘容量 10g
+        let cacheFilePath = "RoniCache" // 缓存路径
+        
+        let urlCache = URLCache(memoryCapacity: memoryCapacity, diskCapacity: diskCapaciry, diskPath: cacheFilePath)
+        
+        request.cachePolicy = .returnCacheDataElseLoad
+        let config = URLSessionConfiguration.default
+        config.urlCache = urlCache
+        
+        let session = URLSession(configuration: config)
+        let dataTask = session.dataTask(with: request) { (data, response, error) in
+            guard let data =  data else{
+                return
+            }
+            
+            print("缓存数据长度: \(data.count)")
+        }
+        
+        dataTask.resume()
+    }
+
+}
+
+// 清理缓存
+
+extension ViewController {
+    
+    func clearCacheFile() {
+        
+        // 获取路径
+        let cachePath = NSSearchPathForDirectoriesInDomains(.cachesDirectory, .userDomainMask, true)[0]
+        
+        // 获取 bundleID
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            return
+        }
+        
+        // 拼接缓存文件路径
+        let projectCachePath = "\(cachePath)/\(bundleIdentifier)"
+        
+        // 创建文件管理
+        let fileManager = FileManager.default
+        
+        // 获取缓存文件列表
+        guard let cacheFileList = try? fileManager.contentsOfDirectory(atPath: projectCachePath) else {
+            return
+        }
+        
+        // 遍历文件列表, 移除所有文件
+        for fileName in cacheFileList {
+            let willRemoveFilePath = projectCachePath + fileName
+            
+            if fileManager.fileExists(atPath: willRemoveFilePath) {
+                try! fileManager.removeItem(atPath: willRemoveFilePath)
+            }
+        }
+        
+    }
+}
+
+
+/**
+ * ## 请求认证 - 为了网络请求的安全性，服务器与客户端之间要进行身份的验证...单向或者双向
+ * #### 认证方式 - HTTPS
+ * 1. NSURLAuthenticationMethodHTTPBasic // HTTP基本认证, 需要提供用户名和密码
+ * 2. NSURLAuthenticationMethodHTTPDigest // HTTP 数字认证, 与基本认证相似需要用户名和密码
+ * 3. NSURLAuthenticationMethodHTMLForm // HTTP 表单认证, 需要提供用户名和密码
+ * 4. NSURLAuthenticationMethodNTLM // NTLM 认证(NT LAN Manager) 是一系列指向用户提供认证,完整性和机密性的微软安全协议
+ * 5. NSURLAuthenticationMethodNegotiate // 协商认证
+ * 6. NSURLAuthenticationMethodClientCertificate // 客户端认证, 需要客户端提供认证所需的证书
+ * 7. NSURLAuthenticationMethodServerTrust // 服务端认证, 有认证请求的保护空间提供信任
+ **后两个是我们在请求 HTTPS 时会遇到的认证,需要服务器或者客户端来提供认证的，这个证书就是我们平时常说的CA证书**
+ 
+ * #### 认证处理策略
+ * 1. URLSession.AuthChallengeDisposition.useCredential // 使用证书
+ * 2. URLSession.AuthChallengeDisposition.performDefaultHandling // 执行默认处理,类似于该代理没有实现一样, credential 参数会被忽略
+ * 3. URLSession.AuthChallengeDisposition.rejectProtectionSpace // 拒绝保护空间, 重试下一次认证, credential 参数会被忽略
+ * 4. URLSession.AuthChallengeDisposition.cancelAuthenticationChallenge // 取消请求,credential 参数会被忽略
+
+ * #### HTTPS请求证书处理
+ 
+ */
+
+// HTTPS请求证书处理
+
+extension ViewController {
+    
+    func authentication() {
+        
+        let fileURL = URL(string: "https://httpbin.org/ip")
+        var request = URLRequest(url: fileURL!)
+        
+        let config = URLSessionConfiguration.default
+        let session = URLSession(configuration: config, delegate: self, delegateQueue: OperationQueue.main)
+        
+        let sessionTask = session.dataTask(with: request) { (data, response, error) in
+            guard let data = data else {
+                return
+            }
+            
+            print(data)
+        }
+        
+        sessionTask.resume()
+    }
+}
+
+extension ViewController: URLSessionDelegate {
+    
+    
+    
+    /// 请求数据时, 如果服务器需要验证, 则会调用这个代理方法
+    ///
+    /// - Parameters:
+    ///   - session:  session
+    ///   - challenge: 授权质疑
+    ///   - completionHandler: 回调
+    func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        
+        let authenticationMethod = challenge.protectionSpace.authenticationMethod  // 从保护空间中取出认证方式
+        
+        if authenticationMethod == NSURLAuthenticationMethodServerTrust {
+            
+            let disposition = URLSession.AuthChallengeDisposition.useCredential // 处理策略
+            let credential = URLCredential.init(trust: challenge.protectionSpace.serverTrust!) // 创建证书
+            completionHandler(disposition, credential) // 证书认证
+        }
+        
+        if authenticationMethod == NSURLAuthenticationMethodHTTPBasic {
+            
+            let disposition = URLSession.AuthChallengeDisposition.useCredential // 处理策略
+            let credential = URLCredential.init(user: "username", password: "pwd", persistence: URLCredential.Persistence.forSession)
+            completionHandler(disposition, credential) // 证书认证
+            
+            return
+            
+        }
+        
+        // 取消请求
+        let disposition = URLSession.AuthChallengeDisposition.cancelAuthenticationChallenge
+        completionHandler(disposition, nil)
+    }
+}
+
+/**
+ * ## NSURLSession相关代理
+ * #### SessionDelegate
+ * <#item2#>
+ * <#item3#>
+ */
+
+
+/**
+ * ## 监测网络连接状态
+ * #### 使用SystemConfiguration实现reachability
+ * <#item2#>
+ * <#item3#>
+ */
+
+// 监测网络连接状态
+
+extension ViewController {
+    
+    func observeNetwork() {
+        
+        // 1. 创建 reachability 上下文
+        var context = SCNetworkReachabilityContext(version: 0, info: nil, retain: nil, release: nil, copyDescription: nil)
+        
+        // 2. 设置回调
+        let closureCallbackEnable = SCNetworkReachabilitySetCallback(reachability!, { (reachabi, flags, info) in
+            guard flags.contains(SCNetworkReachabilityFlags.reachable) else {
+                
+                print("网络不可用")
+                return
+            }
+            
+            if !flags.contains(SCNetworkReachabilityFlags.connectionRequired) {
+                print("以太网或者 WIFI")
+            }
+            
+            if flags.contains(SCNetworkReachabilityFlags.connectionOnDemand) || flags.contains(SCNetworkReachabilityFlags.connectionOnTraffic) {
+                
+                if !flags.contains(SCNetworkReachabilityFlags.interventionRequired) {
+                    
+                    print("以太网或者 WiFI")
+                }
+            }
+            
+            #if os(iOS)
+                if flags.contains(SCNetworkReachabilityFlags.isWWAN) {
+                    
+                    print("蜂窝数据")
+                }
+            #endif
+        }, &context)
+        
+        // 3. 将 reachability 加入执行队列
+        let queueEnable = SCNetworkReachabilitySetDispatchQueue(reachability!, DispatchQueue.main)
+        
+        if closureCallbackEnable && queueEnable {
+            print("已监听网络状态")
+        }
+    }
+}
+
